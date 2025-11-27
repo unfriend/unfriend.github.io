@@ -40,11 +40,24 @@
             text-transform: uppercase;
         }
 
+        /* Matrix Background Canvas */
+        #matrix-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            pointer-events: none; /* Let clicks pass through to the links */
+        }
+
+        /* Word Cloud Container */
         #canvas {
             position: relative;
             width: 100vw;
             height: 100vh;
             overflow: hidden;
+            z-index: 1; /* Sit above the matrix rain */
         }
 
         .cloud-item {
@@ -57,9 +70,10 @@
             transition: left 0.8s ease-in-out, top 0.8s ease-in-out, opacity 0.5s ease;
             opacity: 0; 
             cursor: pointer;
-            z-index: 1;
+            z-index: 10;
             padding: 2px 5px;
             border-radius: 2px;
+            background: rgba(0,0,0,0.4); /* Slight backing to improve readability over rain */
             text-shadow: 0 0 4px rgba(0, 255, 65, 0.5);
         }
 
@@ -95,6 +109,7 @@
 </head>
 <body>
 
+    <canvas id="matrix-bg"></canvas>
     <div id="canvas"></div>
 
     <div id="status-bar">
@@ -109,8 +124,8 @@
         // --- Configuration ---
         const HN_API_BASE = 'https://hacker-news.firebaseio.com/v0';
         const UPDATE_INTERVAL_MS = 10000; 
-        const INITIAL_FETCH_COUNT = 30; // Matches the Top 30 constraint
-        const TOP_STORIES_LIMIT = 30;   // Only monitor the top 30 items
+        const INITIAL_FETCH_COUNT = 60; // Fetch 60 initially
+        const TOP_STORIES_LIMIT = 30;   // Then only monitor top 30
         const MAX_ITEMS = 150; 
         const GLITCH_CHARS = '!<>-_\\/[]{}—=+*^?#01';
 
@@ -125,6 +140,73 @@
         const statusText = document.getElementById('status-text');
         const countText = document.getElementById('count');
         const spinner = document.getElementById('spinner');
+
+        // --- Matrix Background Logic ---
+        function initMatrix() {
+            const c = document.getElementById("matrix-bg");
+            const ctx = c.getContext("2d");
+
+            // Making the canvas full screen
+            c.width = window.innerWidth;
+            c.height = window.innerHeight;
+
+            // Matrix characters - mix of Katakana and Latin
+            const katakana = 'アァカサタナハマヤャラワガザダバパイィキシチニヒミリヰギジヂビピウゥクスツヌフムユュルグズブヅプエェケセテネヘメレヱゲゼデベペオォコソトノホモヨョロヲゴゾドボポヴッン';
+            const latin = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+            const chars = (katakana + latin).split("");
+
+            const fontSize = 14;
+            const columns = c.width / fontSize; // number of columns for the rain
+            
+            // an array of drops - one per column
+            const drops = [];
+            // x below is the x coordinate
+            // 1 = y co-ordinate of the drop(same for every drop initially)
+            for (let x = 0; x < columns; x++)
+                drops[x] = 1; 
+
+            // drawing the characters
+            function drawMatrix() {
+                // Black BG for the canvas
+                // translucent BG to show trail
+                ctx.fillStyle = "rgba(0, 0, 0, 0.05)";
+                ctx.fillRect(0, 0, c.width, c.height);
+
+                ctx.fillStyle = "#004400"; // Subtle dark green text
+                ctx.font = fontSize + "px monospace";
+
+                // looping over drops
+                for (let i = 0; i < drops.length; i++) {
+                    // a random chinese character to print
+                    const text = chars[Math.floor(Math.random() * chars.length)];
+                    // x = i*fontSize, y = value of drops[i]*fontSize
+                    ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+
+                    // sending the drop back to the top randomly after it has crossed the screen
+                    // adding a randomness to the reset to make the drops scattered on the Y axis
+                    if (drops[i] * fontSize > c.height && Math.random() > 0.975)
+                        drops[i] = 0;
+
+                    // incrementing Y coordinate
+                    drops[i]++;
+                }
+            }
+
+            // Update every 120ms instead of 50ms for a slower, more ambient effect
+            setInterval(drawMatrix, 120);
+
+            // Handle resize for matrix
+            window.addEventListener('resize', () => {
+                c.width = window.innerWidth;
+                c.height = window.innerHeight;
+                // re-init drops roughly
+                const newCols = c.width / fontSize;
+                for (let x = 0; x < newCols; x++) {
+                    if (!drops[x]) drops[x] = Math.floor(Math.random() * c.height/fontSize); 
+                }
+            });
+        }
+
 
         // --- Geometry & Layout Engine ---
 
@@ -149,42 +231,57 @@
             return false;
         }
 
-        // --- Layout Calculation ---
+        // --- Layout Calculation: Tetris / Gravity Packing ---
+        // This replaces the spiral logic. 
+        // Strategy: New items get first dibs on the top. 
+        // We iterate Y from top to bottom trying to place the item.
 
-        function getSpiralPosition(width, height, existingRects) {
-            const centerX = window.innerWidth / 2;
-            const centerY = window.innerHeight / 2;
+        function getGravityPosition(width, height, existingRects) {
+            const startY = 40; // Start below the "ceiling" (avoid overlapping header if we had one at top)
+            const stepY = 10;
+            const xTrials = 15; // Number of horizontal positions to attempt dropping into
             
-            let angle = 0;
-            let radius = 0;
-            const angleStep = 0.2; 
-            const radiusStep = 5; // Pixels per rotation roughly
+            let bestPos = null;
 
-            // Max iterations to find a spot
-            const maxIter = 1500; 
-
-            for (let i = 0; i < maxIter; i++) {
-                const x = centerX + (radius * Math.cos(angle)) - (width / 2);
-                const y = centerY + (radius * Math.sin(angle)) - (height / 2);
-
-                const rect = {
-                    left: x,
-                    top: y,
-                    right: x + width,
-                    bottom: y + height
-                };
-
-                // Collision Check
-                if (!checkCollision(rect, existingRects)) {
-                    return { x, y, rect };
+            // Try several random X columns to find the one that lets the item float highest
+            for (let i = 0; i < xTrials; i++) {
+                // Try random X positions (keep inside screen width)
+                const x = Math.floor(Math.random() * (window.innerWidth - width));
+                
+                let y = startY;
+                let foundY = null;
+                
+                // Drop down until we fit or hit bottom
+                // We check collision at steps. 
+                while (y < window.innerHeight) {
+                    const rect = {
+                        left: x,
+                        top: y,
+                        right: x + width,
+                        bottom: y + height
+                    };
+                    
+                    if (!checkCollision(rect, existingRects)) {
+                        foundY = y;
+                        break; // Found the highest spot for this X
+                    }
+                    y += stepY;
                 }
-
-                // Increment spiral
-                angle += angleStep;
-                // Slowly increase radius
-                radius += 0.5; 
+                
+                if (foundY !== null) {
+                    // We want the spot with the MINIMUM Y (highest up)
+                    if (!bestPos || foundY < bestPos.y) {
+                        bestPos = { x, y: foundY, rect: {
+                            left: x,
+                            top: foundY,
+                            right: x + width,
+                            bottom: foundY + height
+                        }};
+                    }
+                }
             }
-            return null; // Could not place
+            
+            return bestPos;
         }
 
         // --- DOM & Visuals ---
@@ -259,9 +356,6 @@
                 
                 el.textContent = newText.join('');
                 
-                // REMOVED: Color shifts and text shadows
-                // The text remains the standard CSS green
-
                 // Restore
                 setTimeout(() => {
                     if (el) {
@@ -277,9 +371,8 @@
         function relayout() {
             const occupiedRects = [];
             
-            // Iterate through stories. 
-            // The list is sorted Newest -> Oldest.
-            // Newest gets first dibs on the center.
+            // Iterate through stories Newest -> Oldest.
+            // Newest gets processed first, so it claims the top spots (Gravity Logic).
             
             state.stories.forEach((story, index) => {
                 let el = document.getElementById(`story-${story.id}`);
@@ -292,8 +385,8 @@
                 const width = el.offsetWidth;
                 const height = el.offsetHeight;
 
-                // Find spot based on what's already placed in THIS pass
-                const pos = getSpiralPosition(width, height, occupiedRects);
+                // Find spot from top down
+                const pos = getGravityPosition(width, height, occupiedRects);
 
                 if (pos) {
                     el.style.left = `${pos.x}px`;
@@ -303,8 +396,8 @@
                     
                     occupiedRects.push(pos.rect);
                 } else {
-                    // If we can't fit it (too far out), hide it or keep it where it was?
-                    // Hiding is safer to prevent overlap mess
+                    // If we can't fit it (screen full or pushed off bottom)
+                    // Set opacity 0 so it fades out
                     el.style.opacity = 0; 
                 }
             });
@@ -325,20 +418,25 @@
             if (state.isFetching) return;
             state.isFetching = true;
             spinner.style.display = 'inline-block';
-            statusText.innerText = "Scanning Top 30...";
+            
+            // Determine fetch limit: 60 on first run, 30 for updates
+            const isFirstRun = state.stories.length === 0;
+            const limit = isFirstRun ? INITIAL_FETCH_COUNT : TOP_STORIES_LIMIT;
+
+            statusText.innerText = `Scanning Top ${limit}...`;
             
             try {
                 const resp = await fetch(`${HN_API_BASE}/topstories.json`);
                 const allIds = await resp.json();
                 
-                // CRITICAL CHANGE: Only consider the top 30 stories
-                const top30Ids = allIds.slice(0, TOP_STORIES_LIMIT);
+                // Slice based on current mode
+                const targetIds = allIds.slice(0, limit);
                 
-                // Check if any of these top 30 are new to us
-                const newIds = top30Ids.filter(id => !state.seenIds.has(id));
+                // Check if any of these are new to us
+                const newIds = targetIds.filter(id => !state.seenIds.has(id));
                 
                 if (newIds.length > 0) {
-                    statusText.innerText = `Found ${newIds.length} new items in Top 30...`;
+                    statusText.innerText = `Found ${newIds.length} new items...`;
                     
                     const newStories = [];
                     for (const id of newIds) {
@@ -348,6 +446,11 @@
                             newStories.push(story);
                         }
                     }
+
+                    // Sort the NEW batch by time (newest first).
+                    // On initial load, this ensures the screen is ordered by date.
+                    // On updates, it ensures the newest of the new sits on top.
+                    newStories.sort((a, b) => b.time - a.time);
 
                     // Add new stories to the BEGINNING of the array
                     if (newStories.length > 0) {
@@ -367,7 +470,7 @@
                         countText.innerText = `Items: ${state.stories.length}`;
                     }
                 } else {
-                    statusText.innerText = "No new items in Top 30.";
+                    statusText.innerText = `Monitoring Top ${limit}...`;
                 }
                 
             } catch (e) {
@@ -377,17 +480,16 @@
                 state.isFetching = false;
                 spinner.style.display = 'none';
                 setTimeout(() => {
-                    if (!state.isFetching) statusText.innerText = "Monitoring Top 30...";
+                    if (!state.isFetching) statusText.innerText = "Live / Waiting...";
                 }, 2000);
             }
         }
 
         // --- Init ---
         function init() {
+            initMatrix(); // Start the background
             fetchTopStories();
             setInterval(fetchTopStories, UPDATE_INTERVAL_MS);
-            
-            // CHANGED: Glitch loop is now much slower (3 seconds instead of 0.15s)
             setInterval(runGlitch, 3000); 
             
             // Handle resize
