@@ -297,7 +297,8 @@
 
         function createWordElement(story) {
             const el = document.createElement('a');
-            el.href = story.url ? story.url : `https://news.ycombinator.com/item?id=${story.id}`;
+            // Always link to the Hacker News discussion page
+            el.href = `https://news.ycombinator.com/item?id=${story.id}`;
             el.target = "_blank";
             el.className = 'cloud-item';
             el.textContent = story.title;
