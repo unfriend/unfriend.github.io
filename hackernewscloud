@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hacker News Live Cloud</title>
+    <style>
+        :root {
+            --bg-color: #000000;
+            --text-color: #00ff41; /* Cyberpunk Green */
+            --highlight: #ccffcc;
+            --dim-text: #003b00;
+            --link-hover: #ffffff;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden; 
+            background-color: var(--bg-color);
+            font-family: 'Courier New', Courier, monospace;
+        }
+
+        #status-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.9);
+            color: var(--text-color);
+            font-size: 12px;
+            z-index: 1000;
+            border-top: 1px solid var(--text-color);
+            display: flex;
+            justify-content: space-between;
+            font-family: 'Courier New', Courier, monospace;
+            text-transform: uppercase;
+        }
+
+        #canvas {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .cloud-item {
+            position: absolute;
+            text-decoration: none;
+            color: var(--text-color);
+            line-height: 1.1;
+            white-space: nowrap;
+            /* Smoothly animate movement when position changes */
+            transition: left 0.8s ease-in-out, top 0.8s ease-in-out, opacity 0.5s ease;
+            opacity: 0; 
+            cursor: pointer;
+            z-index: 1;
+            padding: 2px 5px;
+            border-radius: 2px;
+            text-shadow: 0 0 4px rgba(0, 255, 65, 0.5);
+        }
+
+        .cloud-item:hover {
+            color: #000;
+            background: var(--text-color);
+            z-index: 100;
+            box-shadow: 0 0 15px var(--text-color);
+            transition: none; /* Instant hover effect */
+        }
+
+        .cloud-item.hot {
+            color: #ccffcc;
+            font-weight: bold;
+            text-shadow: 0 0 8px var(--text-color);
+        }
+
+        .loader {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border: 2px solid var(--text-color);
+            border-radius: 50%;
+            border-top-color: transparent;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="canvas"></div>
+
+    <div id="status-bar">
+        <div style="display:flex; align-items:center;">
+            <div id="spinner" class="loader"></div>
+            <span id="status-text">Connecting to HN...</span>
+        </div>
+        <div id="count">Items: 0</div>
+    </div>
+
+    <script>
+        // --- Configuration ---
+        const HN_API_BASE = 'https://hacker-news.firebaseio.com/v0';
+        const UPDATE_INTERVAL_MS = 10000; 
+        const INITIAL_FETCH_COUNT = 30; // Matches the Top 30 constraint
+        const TOP_STORIES_LIMIT = 30;   // Only monitor the top 30 items
+        const MAX_ITEMS = 150; 
+        const GLITCH_CHARS = '!<>-_\\/[]{}—=+*^?#01';
+
+        // --- State ---
+        const state = {
+            seenIds: new Set(),
+            stories: [], // Ordered list: Index 0 is newest/center
+            isFetching: false
+        };
+
+        const canvas = document.getElementById('canvas');
+        const statusText = document.getElementById('status-text');
+        const countText = document.getElementById('count');
+        const spinner = document.getElementById('spinner');
+
+        // --- Geometry & Layout Engine ---
+
+        function isIntersecting(r1, r2) {
+            return !(r2.left > r1.right || 
+                     r2.right < r1.left || 
+                     r2.top > r1.bottom || 
+                     r2.bottom < r1.top);
+        }
+
+        function checkCollision(rect, existingRects) {
+            for (let other of existingRects) {
+                const padding = 1; // Smaller padding for tighter fit
+                const paddedOther = {
+                    left: other.left - padding,
+                    right: other.right + padding,
+                    top: other.top - padding,
+                    bottom: other.bottom + padding
+                };
+                if (isIntersecting(rect, paddedOther)) return true;
+            }
+            return false;
+        }
+
+        // --- Layout Calculation ---
+
+        function getSpiralPosition(width, height, existingRects) {
+            const centerX = window.innerWidth / 2;
+            const centerY = window.innerHeight / 2;
+            
+            let angle = 0;
+            let radius = 0;
+            const angleStep = 0.2; 
+            const radiusStep = 5; // Pixels per rotation roughly
+
+            // Max iterations to find a spot
+            const maxIter = 1500; 
+
+            for (let i = 0; i < maxIter; i++) {
+                const x = centerX + (radius * Math.cos(angle)) - (width / 2);
+                const y = centerY + (radius * Math.sin(angle)) - (height / 2);
+
+                const rect = {
+                    left: x,
+                    top: y,
+                    right: x + width,
+                    bottom: y + height
+                };
+
+                // Collision Check
+                if (!checkCollision(rect, existingRects)) {
+                    return { x, y, rect };
+                }
+
+                // Increment spiral
+                angle += angleStep;
+                // Slowly increase radius
+                radius += 0.5; 
+            }
+            return null; // Could not place
+        }
+
+        // --- DOM & Visuals ---
+
+        function calculateFontSize(score) {
+            // Updated for smaller text: Range 9px to 24px
+            const base = 9;
+            const maxAdd = 15;
+            const cappedScore = Math.min(score, 600);
+            const size = base + (Math.log(cappedScore + 1) / Math.log(601) * maxAdd);
+            return Math.floor(size);
+        }
+
+        function createWordElement(story) {
+            const el = document.createElement('a');
+            el.href = story.url ? story.url : `https://news.ycombinator.com/item?id=${story.id}`;
+            el.target = "_blank";
+            el.className = 'cloud-item';
+            el.textContent = story.title;
+            el.dataset.original = story.title;
+            el.dataset.id = story.id;
+            el.id = `story-${story.id}`;
+
+            const fontSize = calculateFontSize(story.score);
+            el.style.fontSize = `${fontSize}px`;
+            
+            if (story.score > 100) el.classList.add('hot');
+
+            // Add to DOM invisibly first
+            el.style.visibility = 'hidden';
+            canvas.appendChild(el);
+            return el;
+        }
+
+        // --- Glitch Effect ---
+        function runGlitch() {
+            // Pick a few random visible elements
+            const visibleItems = state.stories
+                .map(s => document.getElementById(`story-${s.id}`))
+                .filter(el => el && el.style.opacity === '1');
+
+            if (visibleItems.length === 0) return;
+
+            // Glitch 2 to 5 items per cycle (increased frequency)
+            const glitchCount = Math.floor(Math.random() * 4) + 2;
+            
+            for (let i = 0; i < glitchCount; i++) {
+                const el = visibleItems[Math.floor(Math.random() * visibleItems.length)];
+                if (!el || el.dataset.glitching) continue;
+
+                // Mark as glitching
+                el.dataset.glitching = "true";
+                const originalText = el.dataset.original;
+                const len = originalText.length;
+                
+                // Decide how many chars to flip (Targeting ~50%)
+                const flips = Math.max(1, Math.floor(len * 0.5));
+                
+                let newText = originalText.split('');
+                
+                // Pick random indices to flip
+                const indicesToFlip = new Set();
+                while (indicesToFlip.size < flips) {
+                    indicesToFlip.add(Math.floor(Math.random() * len));
+                }
+
+                indicesToFlip.forEach(idx => {
+                    if (newText[idx] !== ' ') { // Don't flip spaces
+                        newText[idx] = GLITCH_CHARS[Math.floor(Math.random() * GLITCH_CHARS.length)];
+                    }
+                });
+                
+                el.textContent = newText.join('');
+                
+                // REMOVED: Color shifts and text shadows
+                // The text remains the standard CSS green
+
+                // Restore
+                setTimeout(() => {
+                    if (el) {
+                        el.textContent = originalText;
+                        delete el.dataset.glitching;
+                    }
+                }, 100 + Math.random() * 150);
+            }
+        }
+
+        // --- Core Logic: Relayout ---
+
+        function relayout() {
+            const occupiedRects = [];
+            
+            // Iterate through stories. 
+            // The list is sorted Newest -> Oldest.
+            // Newest gets first dibs on the center.
+            
+            state.stories.forEach((story, index) => {
+                let el = document.getElementById(`story-${story.id}`);
+                
+                // If element doesn't exist (shouldn't happen often), create it
+                if (!el) {
+                    el = createWordElement(story);
+                }
+
+                const width = el.offsetWidth;
+                const height = el.offsetHeight;
+
+                // Find spot based on what's already placed in THIS pass
+                const pos = getSpiralPosition(width, height, occupiedRects);
+
+                if (pos) {
+                    el.style.left = `${pos.x}px`;
+                    el.style.top = `${pos.y}px`;
+                    el.style.visibility = 'visible';
+                    el.style.opacity = 1;
+                    
+                    occupiedRects.push(pos.rect);
+                } else {
+                    // If we can't fit it (too far out), hide it or keep it where it was?
+                    // Hiding is safer to prevent overlap mess
+                    el.style.opacity = 0; 
+                }
+            });
+        }
+
+        // --- API & Data Management ---
+
+        async function fetchItem(id) {
+            try {
+                const resp = await fetch(`${HN_API_BASE}/item/${id}.json`);
+                return await resp.json();
+            } catch (e) {
+                return null;
+            }
+        }
+
+        async function fetchTopStories() {
+            if (state.isFetching) return;
+            state.isFetching = true;
+            spinner.style.display = 'inline-block';
+            statusText.innerText = "Scanning Top 30...";
+            
+            try {
+                const resp = await fetch(`${HN_API_BASE}/topstories.json`);
+                const allIds = await resp.json();
+                
+                // CRITICAL CHANGE: Only consider the top 30 stories
+                const top30Ids = allIds.slice(0, TOP_STORIES_LIMIT);
+                
+                // Check if any of these top 30 are new to us
+                const newIds = top30Ids.filter(id => !state.seenIds.has(id));
+                
+                if (newIds.length > 0) {
+                    statusText.innerText = `Found ${newIds.length} new items in Top 30...`;
+                    
+                    const newStories = [];
+                    for (const id of newIds) {
+                        const story = await fetchItem(id);
+                        if (story && !story.deleted && !story.dead) {
+                            state.seenIds.add(id);
+                            newStories.push(story);
+                        }
+                    }
+
+                    // Add new stories to the BEGINNING of the array
+                    if (newStories.length > 0) {
+                        state.stories = [...newStories, ...state.stories];
+                        
+                        // Prune if too many total accumulated items
+                        if (state.stories.length > MAX_ITEMS) {
+                            const removed = state.stories.splice(MAX_ITEMS);
+                            removed.forEach(s => {
+                                const el = document.getElementById(`story-${s.id}`);
+                                if (el) el.remove();
+                                state.seenIds.delete(s.id);
+                            });
+                        }
+
+                        relayout();
+                        countText.innerText = `Items: ${state.stories.length}`;
+                    }
+                } else {
+                    statusText.innerText = "No new items in Top 30.";
+                }
+                
+            } catch (e) {
+                console.error(e);
+                statusText.innerText = "Connection error.";
+            } finally {
+                state.isFetching = false;
+                spinner.style.display = 'none';
+                setTimeout(() => {
+                    if (!state.isFetching) statusText.innerText = "Monitoring Top 30...";
+                }, 2000);
+            }
+        }
+
+        // --- Init ---
+        function init() {
+            fetchTopStories();
+            setInterval(fetchTopStories, UPDATE_INTERVAL_MS);
+            
+            // CHANGED: Glitch loop is now much slower (3 seconds instead of 0.15s)
+            setInterval(runGlitch, 3000); 
+            
+            // Handle resize
+            let resizeTimer;
+            window.addEventListener('resize', () => {
+                clearTimeout(resizeTimer);
+                resizeTimer = setTimeout(relayout, 500);
+            });
+        }
+
+        init();
+
+    </script>
+</body>
+</html>
