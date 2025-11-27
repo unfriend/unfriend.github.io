@@ -73,7 +73,7 @@
             z-index: 10;
             padding: 2px 5px;
             border-radius: 2px;
-            background: rgba(0,0,0,0.4); /* Slight backing to improve readability over rain */
+            background: rgba(0,0,0,0.6); /* Darker backing for better readability */
             text-shadow: 0 0 4px rgba(0, 255, 65, 0.5);
         }
 
@@ -124,7 +124,7 @@
         // --- Configuration ---
         const HN_API_BASE = 'https://hacker-news.firebaseio.com/v0';
         const UPDATE_INTERVAL_MS = 10000; 
-        const INITIAL_FETCH_COUNT = 60; // Fetch 60 initially
+        const INITIAL_FETCH_COUNT = 30; // Fetch 30 initially
         const TOP_STORIES_LIMIT = 30;   // Then only monitor top 30
         const MAX_ITEMS = 150; 
         const GLITCH_CHARS = '!<>-_\\/[]{}—=+*^?#01';
@@ -207,89 +207,12 @@
             });
         }
 
-
-        // --- Geometry & Layout Engine ---
-
-        function isIntersecting(r1, r2) {
-            return !(r2.left > r1.right || 
-                     r2.right < r1.left || 
-                     r2.top > r1.bottom || 
-                     r2.bottom < r1.top);
-        }
-
-        function checkCollision(rect, existingRects) {
-            for (let other of existingRects) {
-                const padding = 1; // Smaller padding for tighter fit
-                const paddedOther = {
-                    left: other.left - padding,
-                    right: other.right + padding,
-                    top: other.top - padding,
-                    bottom: other.bottom + padding
-                };
-                if (isIntersecting(rect, paddedOther)) return true;
-            }
-            return false;
-        }
-
-        // --- Layout Calculation: Tetris / Gravity Packing ---
-        // This replaces the spiral logic. 
-        // Strategy: New items get first dibs on the top. 
-        // We iterate Y from top to bottom trying to place the item.
-
-        function getGravityPosition(width, height, existingRects) {
-            const startY = 40; // Start below the "ceiling" (avoid overlapping header if we had one at top)
-            const stepY = 10;
-            const xTrials = 15; // Number of horizontal positions to attempt dropping into
-            
-            let bestPos = null;
-
-            // Try several random X columns to find the one that lets the item float highest
-            for (let i = 0; i < xTrials; i++) {
-                // Try random X positions (keep inside screen width)
-                const x = Math.floor(Math.random() * (window.innerWidth - width));
-                
-                let y = startY;
-                let foundY = null;
-                
-                // Drop down until we fit or hit bottom
-                // We check collision at steps. 
-                while (y < window.innerHeight) {
-                    const rect = {
-                        left: x,
-                        top: y,
-                        right: x + width,
-                        bottom: y + height
-                    };
-                    
-                    if (!checkCollision(rect, existingRects)) {
-                        foundY = y;
-                        break; // Found the highest spot for this X
-                    }
-                    y += stepY;
-                }
-                
-                if (foundY !== null) {
-                    // We want the spot with the MINIMUM Y (highest up)
-                    if (!bestPos || foundY < bestPos.y) {
-                        bestPos = { x, y: foundY, rect: {
-                            left: x,
-                            top: foundY,
-                            right: x + width,
-                            bottom: foundY + height
-                        }};
-                    }
-                }
-            }
-            
-            return bestPos;
-        }
-
         // --- DOM & Visuals ---
 
         function calculateFontSize(score) {
-            // Updated for smaller text: Range 9px to 24px
-            const base = 9;
-            const maxAdd = 15;
+            // Updated for larger text: Range 14px to 38px
+            const base = 14;
+            const maxAdd = 24;
             const cappedScore = Math.min(score, 600);
             const size = base + (Math.log(cappedScore + 1) / Math.log(601) * maxAdd);
             return Math.floor(size);
@@ -368,14 +291,13 @@
         }
 
         // --- Core Logic: Relayout ---
-
+        
+        // REPLACED: Strict One-Story-Per-Line Logic
         function relayout() {
-            const occupiedRects = [];
+            let currentY = 60; // Start below header margin
             
             // Iterate through stories Newest -> Oldest.
-            // Newest gets processed first, so it claims the top spots (Gravity Logic).
-            
-            state.stories.forEach((story, index) => {
+            state.stories.forEach((story) => {
                 let el = document.getElementById(`story-${story.id}`);
                 
                 // If element doesn't exist (shouldn't happen often), create it
@@ -386,18 +308,24 @@
                 const width = el.offsetWidth;
                 const height = el.offsetHeight;
 
-                // Find spot from top down
-                const pos = getGravityPosition(width, height, occupiedRects);
+                // Check if we have vertical space remaining on screen
+                if (currentY + height < window.innerHeight) {
+                    // Pick a random X within the screen width to maintain "Cloud" feel
+                    // but enforce strict Y positioning (One per line)
+                    
+                    const minX = 20;
+                    const maxX = Math.max(minX, window.innerWidth - width - 20);
+                    const x = Math.floor(Math.random() * (maxX - minX + 1)) + minX;
 
-                if (pos) {
-                    el.style.left = `${pos.x}px`;
-                    el.style.top = `${pos.y}px`;
+                    el.style.left = `${x}px`;
+                    el.style.top = `${currentY}px`;
                     el.style.visibility = 'visible';
                     el.style.opacity = 1;
                     
-                    occupiedRects.push(pos.rect);
+                    // Increment Y for the next item so they never overlap vertically
+                    currentY += height + 8; 
                 } else {
-                    // If we can't fit it (screen full or pushed off bottom)
+                    // If we can't fit it (screen full)
                     // Set opacity 0 so it fades out
                     el.style.opacity = 0; 
                 }
