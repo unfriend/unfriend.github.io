@@ -58,51 +58,6 @@
             transition: background-color 0.5s ease;
         }
 
-        #status-bar {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            width: 100%;
-            padding: 8px 15px;
-            box-sizing: border-box;
-            background: rgba(0, 0, 0, 0.9);
-            color: var(--text-color);
-            font-size: 12px;
-            z-index: 1000;
-            border-top: 1px solid var(--text-color);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-family: 'Courier New', Courier, monospace;
-            text-transform: uppercase;
-            transition: border-color 0.5s ease, color 0.5s ease;
-        }
-
-        /* Status bar override for vaporwave to match solarized dark */
-        body.theme-vaporwave #status-bar {
-            background: #002b36; /* Solarized Base03 */
-            color: #839496;      /* Solarized Base0 */
-            border-top: 1px solid #586e75;
-        }
-
-        select#theme-select {
-            background: #000;
-            color: #00ff41;
-            border: 1px solid #00ff41;
-            font-family: 'Courier New', Courier, monospace;
-            padding: 2px 5px;
-            font-size: 11px;
-            cursor: pointer;
-            outline: none;
-            text-transform: uppercase;
-        }
-
-        body.theme-vaporwave select#theme-select {
-            background: #073642; /* Solarized Base02 */
-            color: #93a1a1;      /* Solarized Base1 */
-            border: 1px solid #586e75;
-        }
-
         /* Matrix Background Canvas */
         #matrix-bg {
             position: fixed;
@@ -159,47 +114,12 @@
             font-weight: bold;
             text-shadow: 0 0 8px var(--hot-shadow);
         }
-
-        .loader {
-            display: inline-block;
-            width: 10px;
-            height: 10px;
-            border: 2px solid var(--text-color);
-            border-radius: 50%;
-            border-top-color: transparent;
-            animation: spin 1s linear infinite;
-            margin-right: 8px;
-            transition: border-color 0.5s ease;
-        }
-        
-        body.theme-vaporwave .loader {
-            border-color: #93a1a1;
-            border-top-color: transparent;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
     </style>
 </head>
 <body>
 
     <canvas id="matrix-bg"></canvas>
     <div id="canvas"></div>
-
-    <div id="status-bar">
-        <div style="display:flex; align-items:center;">
-            <div id="spinner" class="loader"></div>
-            <span id="status-text">Connecting to HN...</span>
-        </div>
-        <div style="display:flex; align-items:center; gap: 15px;">
-            <div id="count">Items: 0</div>
-            <select id="theme-select" onchange="changeTheme(this.value)">
-                <option value="vaporwave" selected>Vaporwave Solarized</option>
-                <option value="matrix">Matrix</option>
-            </select>
-        </div>
-    </div>
 
     <script>
         // --- Configuration ---
@@ -220,15 +140,10 @@
 
         const canvas = document.getElementById('canvas');
         const matrixCanvas = document.getElementById('matrix-bg');
-        const statusText = document.getElementById('status-text');
-        const countText = document.getElementById('count');
-        const spinner = document.getElementById('spinner');
 
         // --- Theme Logic ---
         function changeTheme(themeName) {
             state.theme = themeName;
-            const selectEl = document.getElementById('theme-select');
-            selectEl.value = themeName;
 
             if (themeName === 'vaporwave') {
                 document.body.classList.add('theme-vaporwave');
@@ -366,7 +281,7 @@
         // --- Core Logic: Relayout ---
         
         function relayout() {
-            let currentY = 60; // Start below header margin
+            let currentY = 20; // Start higher since no navbar
             
             state.stories.forEach((story) => {
                 let el = document.getElementById(`story-${story.id}`);
@@ -410,13 +325,10 @@
         async function fetchTopStories() {
             if (state.isFetching) return;
             state.isFetching = true;
-            spinner.style.display = 'inline-block';
             
             const isFirstRun = state.stories.length === 0;
             const limit = isFirstRun ? INITIAL_FETCH_COUNT : TOP_STORIES_LIMIT;
 
-            statusText.innerText = `Scanning Top ${limit}...`;
-            
             try {
                 const resp = await fetch(`${HN_API_BASE}/topstories.json`);
                 const allIds = await resp.json();
@@ -424,7 +336,6 @@
                 const newIds = targetIds.filter(id => !state.seenIds.has(id));
                 
                 if (newIds.length > 0) {
-                    statusText.innerText = `Found ${newIds.length} new items...`;
                     
                     const newStories = [];
                     for (const id of newIds) {
@@ -450,21 +361,13 @@
                         }
 
                         relayout();
-                        countText.innerText = `Items: ${state.stories.length}`;
                     }
-                } else {
-                    statusText.innerText = `Monitoring Top ${limit}...`;
                 }
                 
             } catch (e) {
                 console.error(e);
-                statusText.innerText = "Connection error.";
             } finally {
                 state.isFetching = false;
-                spinner.style.display = 'none';
-                setTimeout(() => {
-                    if (!state.isFetching) statusText.innerText = "Live / Waiting...";
-                }, 2000);
             }
         }
 
@@ -481,6 +384,14 @@
             window.addEventListener('resize', () => {
                 clearTimeout(resizeTimer);
                 resizeTimer = setTimeout(relayout, 500);
+            });
+
+            // Key Listener for 'T'
+            window.addEventListener('keydown', (e) => {
+                if (e.key === 't' || e.key === 'T') {
+                    const newTheme = state.theme === 'matrix' ? 'vaporwave' : 'matrix';
+                    changeTheme(newTheme);
+                }
             });
         }
 
