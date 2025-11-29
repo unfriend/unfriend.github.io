@@ -6,11 +6,45 @@
     <title>Hacker News Live Cloud</title>
     <style>
         :root {
+            /* Default Matrix Theme Variables */
             --bg-color: #000000;
             --text-color: #00ff41; /* Cyberpunk Green */
             --highlight: #ccffcc;
             --dim-text: #003b00;
             --link-hover: #ffffff;
+            --shadow-color: rgba(0, 255, 65, 0.5);
+            --hot-shadow: rgba(0, 255, 65, 0.5);
+        }
+
+        /* Vaporwave Theme Overrides */
+        body.theme-vaporwave {
+            --bg-color: transparent; 
+            --text-color: #002b36; /* Solarized Base03 (Dark Grey/Teal) */
+            --highlight: #002b36; /* Changed from Yellow to match text-color */
+            --dim-text: #002b36;   /* Unified grey */
+            --link-hover: #dc322f; /* Solarized Red */
+            --shadow-color: rgba(255, 255, 255, 0.6); /* White glow for contrast on dark bg */
+            --hot-shadow: rgba(255, 255, 255, 0.8);
+            
+            /* Moving Gradient Background */
+            background: linear-gradient(270deg, #6c71c4, #ff71ce, #2aa198, #01cdfe);
+            background-size: 800% 800%;
+            /* Superslow animation */
+            animation: vaporFlow 120s ease infinite;
+        }
+
+        /* Remove background box for Vaporwave theme items */
+        body.theme-vaporwave .cloud-item {
+            background: transparent;
+            /* White halo to ensure dark grey text is visible on dark gradient spots */
+            text-shadow: 0 0 5px rgba(238, 232, 213, 0.8); 
+            font-weight: 600; /* Slightly bolder for legibility */
+        }
+
+        @keyframes vaporFlow {
+            0%{background-position:0% 50%}
+            50%{background-position:100% 50%}
+            100%{background-position:0% 50%}
         }
 
         body, html {
@@ -21,6 +55,7 @@
             overflow: hidden; 
             background-color: var(--bg-color);
             font-family: 'Courier New', Courier, monospace;
+            transition: background-color 0.5s ease;
         }
 
         #status-bar {
@@ -28,7 +63,8 @@
             bottom: 0;
             left: 0;
             width: 100%;
-            padding: 10px;
+            padding: 8px 15px;
+            box-sizing: border-box;
             background: rgba(0, 0, 0, 0.9);
             color: var(--text-color);
             font-size: 12px;
@@ -36,8 +72,35 @@
             border-top: 1px solid var(--text-color);
             display: flex;
             justify-content: space-between;
+            align-items: center;
             font-family: 'Courier New', Courier, monospace;
             text-transform: uppercase;
+            transition: border-color 0.5s ease, color 0.5s ease;
+        }
+
+        /* Status bar override for vaporwave to match solarized dark */
+        body.theme-vaporwave #status-bar {
+            background: #002b36; /* Solarized Base03 */
+            color: #839496;      /* Solarized Base0 */
+            border-top: 1px solid #586e75;
+        }
+
+        select#theme-select {
+            background: #000;
+            color: #00ff41;
+            border: 1px solid #00ff41;
+            font-family: 'Courier New', Courier, monospace;
+            padding: 2px 5px;
+            font-size: 11px;
+            cursor: pointer;
+            outline: none;
+            text-transform: uppercase;
+        }
+
+        body.theme-vaporwave select#theme-select {
+            background: #073642; /* Solarized Base02 */
+            color: #93a1a1;      /* Solarized Base1 */
+            border: 1px solid #586e75;
         }
 
         /* Matrix Background Canvas */
@@ -48,7 +111,8 @@
             width: 100%;
             height: 100%;
             z-index: 0;
-            pointer-events: none; /* Let clicks pass through to the links */
+            pointer-events: none; 
+            transition: opacity 0.5s ease;
         }
 
         /* Word Cloud Container */
@@ -57,7 +121,7 @@
             width: 100vw;
             height: 100vh;
             overflow: hidden;
-            z-index: 1; /* Sit above the matrix rain */
+            z-index: 1; 
         }
 
         .cloud-item {
@@ -66,15 +130,14 @@
             color: var(--text-color);
             line-height: 1.1;
             white-space: nowrap;
-            /* Smoothly animate movement when position changes */
-            transition: left 0.8s ease-in-out, top 0.8s ease-in-out, opacity 0.5s ease;
+            transition: left 0.8s ease-in-out, top 0.8s ease-in-out, opacity 0.5s ease, color 0.5s ease, text-shadow 0.5s ease;
             opacity: 0; 
             cursor: pointer;
             z-index: 10;
             padding: 2px 5px;
             border-radius: 2px;
-            background: rgba(0,0,0,0.6); /* Darker backing for better readability */
-            text-shadow: 0 0 4px rgba(0, 255, 65, 0.5);
+            background: rgba(0,0,0,0.6); 
+            text-shadow: 0 0 4px var(--shadow-color);
         }
 
         .cloud-item:hover {
@@ -82,13 +145,19 @@
             background: var(--text-color);
             z-index: 100;
             box-shadow: 0 0 15px var(--text-color);
-            transition: none; /* Instant hover effect */
+            transition: none; 
+        }
+
+        body.theme-vaporwave .cloud-item:hover {
+            color: #fdf6e3; /* Solarized Base3 (Light) */
+            background: #002b36; /* Dark background on hover */
+            box-shadow: 0 0 15px #2aa198;
         }
 
         .cloud-item.hot {
-            color: #ccffcc;
+            color: var(--highlight);
             font-weight: bold;
-            text-shadow: 0 0 8px var(--text-color);
+            text-shadow: 0 0 8px var(--hot-shadow);
         }
 
         .loader {
@@ -100,6 +169,12 @@
             border-top-color: transparent;
             animation: spin 1s linear infinite;
             margin-right: 8px;
+            transition: border-color 0.5s ease;
+        }
+        
+        body.theme-vaporwave .loader {
+            border-color: #93a1a1;
+            border-top-color: transparent;
         }
 
         @keyframes spin {
@@ -117,89 +192,97 @@
             <div id="spinner" class="loader"></div>
             <span id="status-text">Connecting to HN...</span>
         </div>
-        <div id="count">Items: 0</div>
+        <div style="display:flex; align-items:center; gap: 15px;">
+            <div id="count">Items: 0</div>
+            <select id="theme-select" onchange="changeTheme(this.value)">
+                <option value="vaporwave" selected>Vaporwave Solarized</option>
+                <option value="matrix">Matrix</option>
+            </select>
+        </div>
     </div>
 
     <script>
         // --- Configuration ---
         const HN_API_BASE = 'https://hacker-news.firebaseio.com/v0';
         const UPDATE_INTERVAL_MS = 10000; 
-        const INITIAL_FETCH_COUNT = 30; // Fetch 30 initially
-        const TOP_STORIES_LIMIT = 30;   // Then only monitor top 30
+        const INITIAL_FETCH_COUNT = 30; 
+        const TOP_STORIES_LIMIT = 30;
         const MAX_ITEMS = 150; 
         const GLITCH_CHARS = '!<>-_\\/[]{}—=+*^?#01';
 
         // --- State ---
         const state = {
             seenIds: new Set(),
-            stories: [], // Ordered list: Index 0 is newest/center
-            isFetching: false
+            stories: [], // Ordered list
+            isFetching: false,
+            theme: 'vaporwave' // Default to Vaporwave
         };
 
         const canvas = document.getElementById('canvas');
+        const matrixCanvas = document.getElementById('matrix-bg');
         const statusText = document.getElementById('status-text');
         const countText = document.getElementById('count');
         const spinner = document.getElementById('spinner');
+
+        // --- Theme Logic ---
+        function changeTheme(themeName) {
+            state.theme = themeName;
+            const selectEl = document.getElementById('theme-select');
+            selectEl.value = themeName;
+
+            if (themeName === 'vaporwave') {
+                document.body.classList.add('theme-vaporwave');
+                matrixCanvas.style.opacity = '0'; // Hide matrix rain
+            } else {
+                document.body.classList.remove('theme-vaporwave');
+                matrixCanvas.style.opacity = '1'; // Show matrix rain
+            }
+        }
 
         // --- Matrix Background Logic ---
         function initMatrix() {
             const c = document.getElementById("matrix-bg");
             const ctx = c.getContext("2d");
 
-            // Making the canvas full screen
             c.width = window.innerWidth;
             c.height = window.innerHeight;
 
-            // Matrix characters - mix of Katakana and Latin
             const katakana = 'アァカサタナハマヤャラワガザダバパイィキシチニヒミリヰギジヂビピウゥクスツヌフムユュルグズブヅプエェケセテネヘメレヱゲゼデベペオォコソトノホモヨョロヲゴゾドボポヴッン';
             const latin = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
             const chars = (katakana + latin).split("");
 
             const fontSize = 14;
-            const columns = c.width / fontSize; // number of columns for the rain
+            const columns = c.width / fontSize;
             
-            // an array of drops - one per column
             const drops = [];
-            // x below is the x coordinate
-            // 1 = y co-ordinate of the drop(same for every drop initially)
-            for (let x = 0; x < columns; x++)
-                drops[x] = 1; 
+            for (let x = 0; x < columns; x++) drops[x] = 1; 
 
-            // drawing the characters
             function drawMatrix() {
-                // Black BG for the canvas
-                // translucent BG to show trail
+                // Optimization: Don't draw if hidden
+                if (state.theme !== 'matrix') return;
+
                 ctx.fillStyle = "rgba(0, 0, 0, 0.05)";
                 ctx.fillRect(0, 0, c.width, c.height);
 
-                ctx.fillStyle = "#004400"; // Subtle dark green text
+                ctx.fillStyle = "#004400"; 
                 ctx.font = fontSize + "px monospace";
 
-                // looping over drops
                 for (let i = 0; i < drops.length; i++) {
-                    // a random chinese character to print
                     const text = chars[Math.floor(Math.random() * chars.length)];
-                    // x = i*fontSize, y = value of drops[i]*fontSize
                     ctx.fillText(text, i * fontSize, drops[i] * fontSize);
 
-                    // sending the drop back to the top randomly after it has crossed the screen
-                    // adding a randomness to the reset to make the drops scattered on the Y axis
                     if (drops[i] * fontSize > c.height && Math.random() > 0.975)
                         drops[i] = 0;
 
-                    // incrementing Y coordinate
                     drops[i]++;
                 }
             }
 
-            // Update every 120ms instead of 50ms for a slower, more ambient effect
             setInterval(drawMatrix, 120);
 
-            // Handle resize for matrix
             window.addEventListener('resize', () => {
                 c.width = window.innerWidth;
                 c.height = window.innerHeight;
-                // re-init drops roughly
                 const newCols = c.width / fontSize;
                 for (let x = 0; x < newCols; x++) {
                     if (!drops[x]) drops[x] = Math.floor(Math.random() * c.height/fontSize); 
@@ -210,7 +293,6 @@
         // --- DOM & Visuals ---
 
         function calculateFontSize(score) {
-            // Updated for larger text: Range 14px to 38px
             const base = 14;
             const maxAdd = 24;
             const cappedScore = Math.min(score, 600);
@@ -220,7 +302,6 @@
 
         function createWordElement(story) {
             const el = document.createElement('a');
-            // Always link to the Hacker News discussion page
             el.href = `https://news.ycombinator.com/item?id=${story.id}`;
             el.target = "_blank";
             el.className = 'cloud-item';
@@ -234,7 +315,6 @@
             
             if (story.score > 100) el.classList.add('hot');
 
-            // Add to DOM invisibly first
             el.style.visibility = 'hidden';
             canvas.appendChild(el);
             return el;
@@ -242,45 +322,38 @@
 
         // --- Glitch Effect ---
         function runGlitch() {
-            // Pick a few random visible elements
             const visibleItems = state.stories
                 .map(s => document.getElementById(`story-${s.id}`))
                 .filter(el => el && el.style.opacity === '1');
 
             if (visibleItems.length === 0) return;
 
-            // Glitch 2 to 5 items per cycle (increased frequency)
             const glitchCount = Math.floor(Math.random() * 4) + 2;
             
             for (let i = 0; i < glitchCount; i++) {
                 const el = visibleItems[Math.floor(Math.random() * visibleItems.length)];
                 if (!el || el.dataset.glitching) continue;
 
-                // Mark as glitching
                 el.dataset.glitching = "true";
                 const originalText = el.dataset.original;
                 const len = originalText.length;
                 
-                // Decide how many chars to flip (Targeting ~50%)
                 const flips = Math.max(1, Math.floor(len * 0.5));
                 
                 let newText = originalText.split('');
-                
-                // Pick random indices to flip
                 const indicesToFlip = new Set();
                 while (indicesToFlip.size < flips) {
                     indicesToFlip.add(Math.floor(Math.random() * len));
                 }
 
                 indicesToFlip.forEach(idx => {
-                    if (newText[idx] !== ' ') { // Don't flip spaces
+                    if (newText[idx] !== ' ') {
                         newText[idx] = GLITCH_CHARS[Math.floor(Math.random() * GLITCH_CHARS.length)];
                     }
                 });
                 
                 el.textContent = newText.join('');
                 
-                // Restore
                 setTimeout(() => {
                     if (el) {
                         el.textContent = originalText;
@@ -292,15 +365,12 @@
 
         // --- Core Logic: Relayout ---
         
-        // REPLACED: Strict One-Story-Per-Line Logic
         function relayout() {
             let currentY = 60; // Start below header margin
             
-            // Iterate through stories Newest -> Oldest.
             state.stories.forEach((story) => {
                 let el = document.getElementById(`story-${story.id}`);
                 
-                // If element doesn't exist (shouldn't happen often), create it
                 if (!el) {
                     el = createWordElement(story);
                 }
@@ -308,25 +378,19 @@
                 const width = el.offsetWidth;
                 const height = el.offsetHeight;
 
-                // Check if we have vertical space remaining on screen
                 if (currentY + height < window.innerHeight) {
-                    // Pick a random X within the screen width to maintain "Cloud" feel
-                    // but enforce strict Y positioning (One per line)
-                    
                     const minX = 20;
                     const maxX = Math.max(minX, window.innerWidth - width - 20);
-                    const x = Math.floor(Math.random() * (maxX - minX + 1)) + minX;
+                    const safeMaxX = Math.max(minX, maxX);
+                    const x = Math.floor(Math.random() * (safeMaxX - minX + 1)) + minX;
 
                     el.style.left = `${x}px`;
                     el.style.top = `${currentY}px`;
                     el.style.visibility = 'visible';
                     el.style.opacity = 1;
                     
-                    // Increment Y for the next item so they never overlap vertically
                     currentY += height + 8; 
                 } else {
-                    // If we can't fit it (screen full)
-                    // Set opacity 0 so it fades out
                     el.style.opacity = 0; 
                 }
             });
@@ -348,7 +412,6 @@
             state.isFetching = true;
             spinner.style.display = 'inline-block';
             
-            // Determine fetch limit: 60 on first run, 30 for updates
             const isFirstRun = state.stories.length === 0;
             const limit = isFirstRun ? INITIAL_FETCH_COUNT : TOP_STORIES_LIMIT;
 
@@ -357,11 +420,7 @@
             try {
                 const resp = await fetch(`${HN_API_BASE}/topstories.json`);
                 const allIds = await resp.json();
-                
-                // Slice based on current mode
                 const targetIds = allIds.slice(0, limit);
-                
-                // Check if any of these are new to us
                 const newIds = targetIds.filter(id => !state.seenIds.has(id));
                 
                 if (newIds.length > 0) {
@@ -376,16 +435,11 @@
                         }
                     }
 
-                    // Sort the NEW batch by time (newest first).
-                    // On initial load, this ensures the screen is ordered by date.
-                    // On updates, it ensures the newest of the new sits on top.
-                    newStories.sort((a, b) => b.time - a.time);
-
-                    // Add new stories to the BEGINNING of the array
                     if (newStories.length > 0) {
-                        state.stories = [...newStories, ...state.stories];
+                        state.stories = [...state.stories, ...newStories];
+                        // Time Sort
+                        state.stories.sort((a, b) => b.time - a.time);
                         
-                        // Prune if too many total accumulated items
                         if (state.stories.length > MAX_ITEMS) {
                             const removed = state.stories.splice(MAX_ITEMS);
                             removed.forEach(s => {
@@ -414,14 +468,15 @@
             }
         }
 
-        // --- Init ---
         function init() {
-            initMatrix(); // Start the background
+            initMatrix(); 
+            // Apply default theme
+            changeTheme(state.theme);
+            
             fetchTopStories();
             setInterval(fetchTopStories, UPDATE_INTERVAL_MS);
             setInterval(runGlitch, 3000); 
             
-            // Handle resize
             let resizeTimer;
             window.addEventListener('resize', () => {
                 clearTimeout(resizeTimer);
